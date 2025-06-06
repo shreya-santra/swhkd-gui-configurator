@@ -28,7 +28,7 @@ pub fn view(state: &AppState) -> Element<Message> {
         .into();
     }
 
-    // Left panel: App list (responsive and well-spaced)
+    // Left panel: App list 
     let mut app_list = column![];
     for (i, app) in state.apps.iter().enumerate() {
         let btn = button(text(&app.name))
