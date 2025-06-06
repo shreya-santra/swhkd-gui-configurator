@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::BTreeSet;
 
-// Translation/i18n support - simple approach
+// Translation/i18n support 
 pub fn tr(key: &str) -> String {
     match key {
         "app_name" => "App Name".to_string(),
