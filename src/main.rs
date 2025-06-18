@@ -3,21 +3,12 @@ mod interface;
 mod key_recording;
 
 use iced::{Application, Command, Element, Settings, Subscription, Theme};
-use data_model::{AppState, tr};
+use data_model::AppState;
 use interface::{view, Message};
 use std::collections::BTreeSet;
-use std::process::Command as ProcessCommand;
 
 pub fn main() -> iced::Result {
-    SwhkdGui::run(Settings {
-        window: iced::window::Settings {
-            size: (1200, 800), // Better default size
-            min_size: Some((800, 600)), // Minimum size for responsive design
-            resizable: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    SwhkdGui::run(Settings::default())
 }
 
 struct SwhkdGui {
@@ -31,11 +22,13 @@ impl Application for SwhkdGui {
     type Flags = ();
 
     fn new(_flags: ()) -> (Self, Command<Self::Message>) {
-        (Self { state: AppState::new() }, Command::none())
+        let mut state = AppState::new();
+        let _ = state.load_from_swhkd_config(); // Load existing config if available
+        (Self { state }, Command::none())
     }
 
     fn title(&self) -> String {
-        tr("swhkd_gui_configurator")
+        "SWHKD GUI Configurator".to_string()
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
@@ -89,9 +82,9 @@ impl Application for SwhkdGui {
                 let app = &mut self.state.apps[self.state.selected_app];
                 app.hotkeys.push(data_model::Hotkey {
                     modifiers: BTreeSet::new(),
-                    key: String::new(),
+                    key: String::from(""),
                     action: data_model::Action {
-                        command: String::new(),
+                        command: String::from(""),
                         active: true,
                         layer_id: 0,
                     },
@@ -108,7 +101,6 @@ impl Application for SwhkdGui {
                 self.state.recording_hotkey = Some(idx);
             }
             Message::KeyRecorded(combination) => {
-                let combination_clone = combination.clone();
                 if let Some(idx) = self.state.recording_hotkey.take() {
                     let app = &mut self.state.apps[self.state.selected_app];
                     if let Some(hotkey) = app.hotkeys.get_mut(idx) {
@@ -124,22 +116,16 @@ impl Application for SwhkdGui {
                         }
                     }
                 }
-                // Run the command if the key combo matches an active hotkey (for demo, while GUI focused)
-                let app = &self.state.apps[self.state.selected_app];
-                for hotkey in &app.hotkeys {
-                    if hotkey.action.active
-                        && !hotkey.action.command.is_empty()
-                        && format!("{}", hotkey) == combination_clone
-                    {
-                        let _ = ProcessCommand::new("sh")
-                            .arg("-c")
-                            .arg(&hotkey.action.command)
-                            .spawn();
-                    }
-                }
             }
             Message::StopRecording => {
                 self.state.recording_hotkey = None;
+            }
+            // NEW: Handle saving to SWHKD
+            Message::SaveConfig => {
+                match self.state.save_to_swhkd_config() {
+                    Ok(()) => println!("✅ Configuration saved and applied to SWHKD!"),
+                    Err(e) => println!("❌ Error saving config: {}", e),
+                }
             }
         }
         Command::none()
