@@ -1,6 +1,6 @@
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Space};
 use iced::{Alignment, Element, Length};
-use crate::data_model::{AppState, AppMode, tr};
+use crate::data_model::{AppState, AppMode};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -15,12 +15,13 @@ pub enum Message {
     KeyRecorded(String),
     StopRecording,
     AddApp,
+    SaveConfig, // NEW: Save to SWHKD
 }
 
 pub fn view(state: &AppState) -> Element<Message> {
     if state.apps.is_empty() {
         return container(
-            text(tr("no_apps_available"))
+            text("No apps available. Please add an app.")
         )
         .center_x()
         .center_y()
@@ -28,7 +29,7 @@ pub fn view(state: &AppState) -> Element<Message> {
         .into();
     }
 
-    // Left panel: App list 
+    // Left panel: App list (scrollable)
     let mut app_list = column![];
     for (i, app) in state.apps.iter().enumerate() {
         let btn = button(text(&app.name))
@@ -44,7 +45,7 @@ pub fn view(state: &AppState) -> Element<Message> {
     }
     app_list = app_list.push(Space::with_height(Length::Fixed(15.0)));
     app_list = app_list.push(
-        button(text(tr("add_app")))
+        button(text("+ Add App"))
             .on_press(Message::AddApp)
             .width(Length::Fill)
             .padding(12)
@@ -63,7 +64,7 @@ pub fn view(state: &AppState) -> Element<Message> {
         column![
             text("Application Settings").size(20),
             Space::with_height(Length::Fixed(10.0)),
-            text_input(&tr("app_name"), &selected_app.name)
+            text_input("App Name", &selected_app.name)
                 .on_input(Message::EditAppName)
                 .padding(8)
                 .size(18)
@@ -75,11 +76,11 @@ pub fn view(state: &AppState) -> Element<Message> {
 
     let header_row = container(
         row![
-            text(tr("key_combination")).width(Length::FillPortion(3)),
-            text(tr("command")).width(Length::FillPortion(4)),
-            text(tr("active")).width(Length::FillPortion(1)),
-            text(tr("delete")).width(Length::FillPortion(1)),
-            text(tr("record")).width(Length::FillPortion(1)),
+            text("Key Combination").width(Length::FillPortion(3)),
+            text("Command").width(Length::FillPortion(4)),
+            text("Active").width(Length::FillPortion(1)),
+            text("Delete").width(Length::FillPortion(1)),
+            text("Record").width(Length::FillPortion(1)),
         ]
         .spacing(20)
         .align_items(Alignment::Center)
@@ -98,35 +99,35 @@ pub fn view(state: &AppState) -> Element<Message> {
             )
         };
         let recording_indicator = if state.recording_hotkey == Some(i) {
-            tr("recording")
+            "🔴"
         } else {
-            tr("not_recording")
+            "⎈"
         };
         let row_elem = container(
             row![
-                text_input(&tr("key_combination"), &key_display)
+                text_input("Key Combination", &key_display)
                     .on_input(move |val| Message::EditKey(i, val))
                     .width(Length::FillPortion(3))
                     .padding(8),
-                text_input(&tr("command"), &hotkey.action.command)
+                text_input("Command", &hotkey.action.command)
                     .on_input(move |val| Message::EditCommand(i, val))
                     .width(Length::FillPortion(4))
                     .padding(8),
                 container(
                     checkbox(
                         "",
-                        hotkey.action.active,
-                        move |is_checked| Message::ToggleActive(i, is_checked),
+                        hotkey.action.active
                     )
+                    .on_toggle(move |is_checked| Message::ToggleActive(i, is_checked))
                 ).width(Length::FillPortion(1)).center_x(),
                 container(
-                    button(text(tr("delete")))
+                    button(text("Delete"))
                         .on_press(Message::DeleteHotkey(i))
                         .style(iced::theme::Button::Destructive)
                         .padding(8)
                 ).width(Length::FillPortion(1)),
                 container(
-                    button(text(&recording_indicator))
+                    button(text(recording_indicator))
                         .on_press(Message::StartRecording(i))
                         .padding(8)
                 ).width(Length::FillPortion(1)),
@@ -140,10 +141,16 @@ pub fn view(state: &AppState) -> Element<Message> {
         hotkey_rows = hotkey_rows.push(Space::with_height(Length::Fixed(8.0)));
     }
 
+    // Controls with Save button
     let controls = container(
         row![
-            button(text(tr("add_hotkey")))
+            button(text("Add Hotkey"))
                 .on_press(Message::AddHotkey)
+                .padding(12)
+                .style(iced::theme::Button::Primary),
+            Space::with_width(Length::Fixed(20.0)),
+            button(text("💾 Save & Apply to System"))
+                .on_press(Message::SaveConfig)
                 .padding(12)
                 .style(iced::theme::Button::Primary)
         ]
@@ -169,7 +176,7 @@ pub fn view(state: &AppState) -> Element<Message> {
         row![
             container(
                 column![
-                    container(text(tr("apps")).size(22))
+                    container(text("APPS").size(22))
                         .padding(20)
                         .style(iced::theme::Container::Box),
                     Space::with_height(Length::Fixed(15.0)),
@@ -190,5 +197,6 @@ pub fn view(state: &AppState) -> Element<Message> {
     .height(Length::Fill)
     .into()
 }
+
 
 
