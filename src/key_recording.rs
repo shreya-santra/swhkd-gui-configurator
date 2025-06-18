@@ -1,38 +1,41 @@
-use iced::{keyboard, Event, Subscription};
-use iced::keyboard::KeyCode;
+use iced::{keyboard, Subscription};
 use crate::interface::Message;
 
 pub fn key_recorder() -> Subscription<Message> {
-    iced::subscription::events_with(|event, _status| {
-        match event {
-            Event::Keyboard(keyboard::Event::KeyPressed { key_code, modifiers, .. }) => {
-                if is_modifier_key(&key_code) {
-                    return None;
-                }
-                let mut combo_parts = Vec::new();
-                if modifiers.control() { combo_parts.push("Ctrl".to_string()); }
-                if modifiers.alt() { combo_parts.push("Alt".to_string()); }
-                if modifiers.shift() { combo_parts.push("Shift".to_string()); }
-                if modifiers.logo() { combo_parts.push("Super".to_string()); }
-                let key_str = format!("{:?}", key_code);
-                combo_parts.push(key_str);
-                let combination = combo_parts.join(" + ");
-                Some(Message::KeyRecorded(combination))
-            }
-            _ => None,
-        }
-    })
+    keyboard::on_key_press(handle_keypress)
 }
-fn is_modifier_key(key: &KeyCode) -> bool {
+
+fn handle_keypress(key: keyboard::Key, modifiers: keyboard::Modifiers) -> Option<Message> {
+    if is_modifier_key(&key) {
+        return None;
+    }
+    
+    let mut combo_parts = Vec::new();
+    
+    // Adding the modifiers
+    if modifiers.control() { combo_parts.push("Ctrl".to_string()); }
+    if modifiers.alt() { combo_parts.push("Alt".to_string()); }
+    if modifiers.shift() { combo_parts.push("Shift".to_string()); }
+    if modifiers.logo() { combo_parts.push("Super".to_string()); }
+    
+    // Adding the key itself
+    let key_str = match key.as_ref() {
+        keyboard::Key::Character(c) => c.to_string(),
+        keyboard::Key::Named(named) => format!("{:?}", named),
+        _ => return None, // Skip other key types
+    };
+    combo_parts.push(key_str);
+    
+    let combination = combo_parts.join(" + ");
+    Some(Message::KeyRecorded(combination))
+}
+
+fn is_modifier_key(key: &keyboard::Key) -> bool {
     matches!(
-        key,
-        KeyCode::LControl
-            | KeyCode::RControl
-            | KeyCode::LAlt
-            | KeyCode::RAlt
-            | KeyCode::LShift
-            | KeyCode::RShift
-            | KeyCode::LWin
-            | KeyCode::RWin
+        key.as_ref(),
+        keyboard::Key::Named(keyboard::key::Named::Control)
+            | keyboard::Key::Named(keyboard::key::Named::Alt)
+            | keyboard::Key::Named(keyboard::key::Named::Shift)
+            | keyboard::Key::Named(keyboard::key::Named::Super)
     )
 }
