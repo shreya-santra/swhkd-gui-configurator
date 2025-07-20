@@ -1,27 +1,19 @@
 mod data_model;
 mod interface;
-mod key_recording;
 
-use iced::{Application, Command, Element, Settings, Subscription, Theme};
-use data_model::{AppState, tr};
+use iced::{Application, Command, Element, Settings, Theme};
+use data_model::AppState;
 use interface::{view, Message};
-use std::collections::BTreeSet;
-use std::process::Command as ProcessCommand;
+use sweet_git::{Modifier, Key};
+use evdev::KeyCode as EV_KEY;
 
 pub fn main() -> iced::Result {
-    SwhkdGui::run(Settings {
-        window: iced::window::Settings {
-            size: (1200, 800), // Better default size
-            min_size: Some((800, 600)), // Minimum size for responsive design
-            resizable: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    SwhkdGui::run(Settings::default())
 }
 
 struct SwhkdGui {
     state: AppState,
+    error: Option<String>,
 }
 
 impl Application for SwhkdGui {
@@ -31,121 +23,82 @@ impl Application for SwhkdGui {
     type Flags = ();
 
     fn new(_flags: ()) -> (Self, Command<Self::Message>) {
-        (Self { state: AppState::new() }, Command::none())
+        let mut state = AppState::new();
+        let _ = state.load_from_swhkd_config();
+        (Self { state, error: None }, Command::none())
     }
 
     fn title(&self) -> String {
-        tr("swhkd_gui_configurator")
-    }
-
-    fn subscription(&self) -> Subscription<Self::Message> {
-        if self.state.recording_hotkey.is_some() {
-            key_recording::key_recorder()
-        } else {
-            Subscription::none()
-        }
+        "SWHKD GUI Configurator".to_string()
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            Message::SelectApp(idx) => self.state.selected_app = idx,
-            Message::EditAppName(new_name) => {
-                self.state.apps[self.state.selected_app].name = new_name;
-            }
             Message::EditKey(idx, new_key) => {
-                let app = &mut self.state.apps[self.state.selected_app];
-                if let Some(hotkey) = app.hotkeys.get_mut(idx) {
-                    if new_key.contains(" + ") {
-                        let parts: Vec<&str> = new_key.split(" + ").collect();
-                        if let Some((key, modifiers)) = parts.split_last() {
-                            hotkey.key = key.to_string();
-                            hotkey.modifiers = modifiers.iter().map(|s| s.to_string()).collect();
-                        }
-                    } else {
-                        hotkey.key = new_key;
-                        hotkey.modifiers.clear();
+                let mut parts: Vec<&str> = new_key.split('+').map(|s| s.trim()).collect();
+                if let Some(last) = parts.pop() {
+                    // You may need to map `last` to an appropriate evdev::enums::EV_KEY variant
+                    // For demonstration, assuming EV_KEY::KEY_A for 'a'
+                    let evdev_keycode = match last.to_lowercase().as_str() {
+                        "a" => EV_KEY::KEY_A,
+                        "b" => EV_KEY::KEY_B,
+                        "c" => EV_KEY::KEY_C,
+                        // Add more mappings as needed
+                        _ => EV_KEY::KEY_A, // default fallback
+                    };
+                    let key = Key::new(evdev_keycode, sweet_git::KeyAttribute::empty());
+                    let modifiers = parts.iter().filter_map(|m| match *m {
+                        "Ctrl" => Some(Modifier::Control),
+                        "Alt" => Some(Modifier::Alt),
+                        "Shift" => Some(Modifier::Shift),
+                        "Super" => Some(Modifier::Super),
+                        _ => None,
+                    }).collect();
+                    if let Some(hotkey) = self.state.working.get_mut(idx) {
+                        hotkey.key = key;
+                        hotkey.modifiers = modifiers;
                     }
                 }
             }
             Message::EditCommand(idx, new_command) => {
-                let app = &mut self.state.apps[self.state.selected_app];
-                if let Some(hotkey) = app.hotkeys.get_mut(idx) {
-                    hotkey.action.command = new_command;
+                if let Some(hotkey) = self.state.working.get_mut(idx) {
+                    hotkey.command = new_command;
                 }
             }
             Message::ToggleActive(idx, active) => {
-                let app = &mut self.state.apps[self.state.selected_app];
-                if let Some(hotkey) = app.hotkeys.get_mut(idx) {
-                    hotkey.action.active = active;
+                if let Some(hotkey) = self.state.working.get_mut(idx) {
+                    hotkey.active = active;
                 }
             }
             Message::DeleteHotkey(idx) => {
-                let app = &mut self.state.apps[self.state.selected_app];
-                if idx < app.hotkeys.len() {
-                    app.hotkeys.remove(idx);
+                if idx < self.state.working.len() {
+                    self.state.working.remove(idx);
                 }
             }
             Message::AddHotkey => {
-                let app = &mut self.state.apps[self.state.selected_app];
-                app.hotkeys.push(data_model::Hotkey {
-                    modifiers: BTreeSet::new(),
-                    key: String::new(),
-                    action: data_model::Action {
-                        command: String::new(),
-                        active: true,
-                        layer_id: 0,
-                    },
+                self.state.working.push(data_model::GuiBinding {
+                    modifiers: vec![],
+                    key: Key::new(evdev::Key::new(EV_KEY::KEY_A), sweet_git::KeyAttribute::empty()),
+                    command: String::from("echo hello"),
+                    active: true,
                 });
             }
-            Message::AddApp => {
-                self.state.apps.push(data_model::AppMode {
-                    name: format!("App {}", self.state.apps.len() + 1),
-                    hotkeys: vec![],
-                });
-                self.state.selected_app = self.state.apps.len() - 1;
-            }
-            Message::StartRecording(idx) => {
-                self.state.recording_hotkey = Some(idx);
-            }
-            Message::KeyRecorded(combination) => {
-                let combination_clone = combination.clone();
-                if let Some(idx) = self.state.recording_hotkey.take() {
-                    let app = &mut self.state.apps[self.state.selected_app];
-                    if let Some(hotkey) = app.hotkeys.get_mut(idx) {
-                        if combination.contains(" + ") {
-                            let parts: Vec<&str> = combination.split(" + ").collect();
-                            if let Some((key, modifiers)) = parts.split_last() {
-                                hotkey.key = key.to_string();
-                                hotkey.modifiers = modifiers.iter().map(|s| s.to_string()).collect();
-                            }
-                        } else {
-                            hotkey.key = combination;
-                            hotkey.modifiers.clear();
-                        }
-                    }
-                }
-                // Run the command if the key combo matches an active hotkey (for demo, while GUI focused)
-                let app = &self.state.apps[self.state.selected_app];
-                for hotkey in &app.hotkeys {
-                    if hotkey.action.active
-                        && !hotkey.action.command.is_empty()
-                        && format!("{}", hotkey) == combination_clone
-                    {
-                        let _ = ProcessCommand::new("sh")
-                            .arg("-c")
-                            .arg(&hotkey.action.command)
-                            .spawn();
-                    }
+            Message::SaveConfig => {
+                match self.state.save_to_swhkd_config() {
+                    Ok(_) => self.error = None,
+                    Err(e) => self.error = Some(e),
                 }
             }
-            Message::StopRecording => {
-                self.state.recording_hotkey = None;
+            Message::LoadConfig => {
+                let _ = self.state.load_from_swhkd_config();
             }
+            Message::ShowError(msg) => self.error = Some(msg),
+            Message::ClearError => self.error = None,
         }
         Command::none()
     }
 
     fn view(&self) -> Element<Self::Message> {
-        view(&self.state)
+        view(&self.state, &self.error)
     }
 }
