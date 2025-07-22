@@ -1,11 +1,8 @@
 mod data_model;
 mod interface;
-
 use iced::{Application, Command, Element, Settings, Theme};
-use data_model::AppState;
+use data_model::{AppState, AppMode};
 use interface::{view, Message};
-use sweet_git::{Modifier, Key};
-use evdev::KeyCode as EV_KEY;
 
 pub fn main() -> iced::Result {
     SwhkdGui::run(Settings::default())
@@ -33,67 +30,83 @@ impl Application for SwhkdGui {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+        use Message::*;
         match message {
-            Message::EditKey(idx, new_key) => {
-                let mut parts: Vec<&str> = new_key.split('+').map(|s| s.trim()).collect();
-                if let Some(last) = parts.pop() {
-                    // You may need to map `last` to an appropriate evdev::enums::EV_KEY variant
-                    // For demonstration, assuming EV_KEY::KEY_A for 'a'
-                    let evdev_keycode = match last.to_lowercase().as_str() {
-                        "a" => EV_KEY::KEY_A,
-                        "b" => EV_KEY::KEY_B,
-                        "c" => EV_KEY::KEY_C,
-                        // Add more mappings as needed
-                        _ => EV_KEY::KEY_A, // default fallback
-                    };
-                    let key = Key::new(evdev_keycode, sweet_git::KeyAttribute::empty());
-                    let modifiers = parts.iter().filter_map(|m| match *m {
-                        "Ctrl" => Some(Modifier::Control),
-                        "Alt" => Some(Modifier::Alt),
-                        "Shift" => Some(Modifier::Shift),
-                        "Super" => Some(Modifier::Super),
-                        _ => None,
-                    }).collect();
-                    if let Some(hotkey) = self.state.working.get_mut(idx) {
-                        hotkey.key = key;
-                        hotkey.modifiers = modifiers;
+            SelectMode(idx) => {
+                if idx < self.state.modes.len() {
+                    self.state.selected_mode = idx;
+                }
+            }
+            EditModeName(new_name) => {
+                if let Some(mode) = self.state.modes.get_mut(self.state.selected_mode) {
+                    mode.name = new_name;
+                }
+            }
+            EditKey(idx, new_key) => {
+                let app = &mut self.state.modes[self.state.selected_mode];
+                if let Some(hk) = app.hotkeys.get_mut(idx) {
+                    hk.key = new_key;
+                }
+            }
+            EditCommand(idx, new_command) => {
+                let app = &mut self.state.modes[self.state.selected_mode];
+                if let Some(hk) = app.hotkeys.get_mut(idx) {
+                    hk.action.command = new_command;
+                }
+            }
+            ToggleActive(idx, active) => {
+                let app = &mut self.state.modes[self.state.selected_mode];
+                if let Some(hk) = app.hotkeys.get_mut(idx) {
+                    hk.action.active = active;
+                }
+            }
+            DeleteHotkey(idx) => {
+                let app = &mut self.state.modes[self.state.selected_mode];
+                if idx < app.hotkeys.len() {
+                    app.hotkeys.remove(idx);
+                }
+            }
+            AddHotkey => {
+                let app = &mut self.state.modes[self.state.selected_mode];
+                app.hotkeys.push(data_model::GuiHotkey {
+                    modifiers: Default::default(),
+                    key: "a".to_string(),
+                    action: data_model::GuiAction {
+                        command: "".to_string(),
+                        active: true,
+                        layer_id: 0,
                     }
-                }
-            }
-            Message::EditCommand(idx, new_command) => {
-                if let Some(hotkey) = self.state.working.get_mut(idx) {
-                    hotkey.command = new_command;
-                }
-            }
-            Message::ToggleActive(idx, active) => {
-                if let Some(hotkey) = self.state.working.get_mut(idx) {
-                    hotkey.active = active;
-                }
-            }
-            Message::DeleteHotkey(idx) => {
-                if idx < self.state.working.len() {
-                    self.state.working.remove(idx);
-                }
-            }
-            Message::AddHotkey => {
-                self.state.working.push(data_model::GuiBinding {
-                    modifiers: vec![],
-                    key: Key::new(evdev::Key::new(EV_KEY::KEY_A), sweet_git::KeyAttribute::empty()),
-                    command: String::from("echo hello"),
-                    active: true,
                 });
             }
-            Message::SaveConfig => {
+            AddMode => {
+                self.state.modes.push(AppMode {
+                    name: "New Mode".to_string(),
+                    hotkeys: vec![],
+                });
+                self.state.selected_mode = self.state.modes.len() - 1;
+            }
+            StartRecording(idx) => {
+                self.state.recording_hotkey = Some(idx);
+            }
+            KeyRecorded(combo) => {
+                // TODO: Implement your key recording logic here
+                // This callback is where you parse "a", "ctrl + t", etc.
+                // into modifier/key and update the hotkey at `state.recording_hotkey`
+            }
+            StopRecording => {
+                self.state.recording_hotkey = None;
+            }
+            SaveConfig => {
                 match self.state.save_to_swhkd_config() {
                     Ok(_) => self.error = None,
                     Err(e) => self.error = Some(e),
                 }
             }
-            Message::LoadConfig => {
+            LoadConfig => {
                 let _ = self.state.load_from_swhkd_config();
             }
-            Message::ShowError(msg) => self.error = Some(msg),
-            Message::ClearError => self.error = None,
+            ShowError(msg) => self.error = Some(msg),
+            ClearError => self.error = None,
         }
         Command::none()
     }
@@ -102,3 +115,4 @@ impl Application for SwhkdGui {
         view(&self.state, &self.error)
     }
 }
+
