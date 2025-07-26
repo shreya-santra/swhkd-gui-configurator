@@ -1,13 +1,11 @@
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Space};
-use iced::{Alignment, Element, Length, Theme};
-use crate::data_model::{AppState , AppMode, GuiHotkey};
-use sweet::{Key, Modifier};
+use iced::{Alignment, Color, Element, Length};
+use crate::data_model::AppState;
 
 #[derive(Debug, Clone)]
 pub enum Message {
     SelectMode(usize),
     EditModeName(String),
-    EditKey(usize, String),
     EditCommand(usize, String),
     ToggleActive(usize, bool),
     DeleteHotkey(usize),
@@ -17,204 +15,162 @@ pub enum Message {
     StopRecording,
     AddMode,
     SaveConfig,
-    LoadConfig,
     ShowError(String),
     ClearError,
 }
 
 pub fn view<'a>(state: &'a AppState, error: &'a Option<String>) -> Element<'a, Message> {
-    if state.modes.is_empty() {
-        return container(
-            text("No apps available. Please add a mode.")
-        )
-        .center_x()
-        .center_y()
-        .padding(40)
-        .into();
-    }
-
-    // Left panel: Mode list (scrollable)
     let mut mode_list = column![];
     for (i, mode) in state.modes.iter().enumerate() {
         let btn = button(text(&mode.name))
             .on_press(Message::SelectMode(i))
             .width(Length::Fill)
-            .padding(12);
-        let btn = if i == state.selected_mode {
-            btn.style(iced::theme::Button::Primary)
-        } else {
-            btn
-        };
-        mode_list = mode_list.push(btn);
+            .padding(8)
+            .style(if i == state.selected_mode {
+                iced::theme::Button::Primary
+            } else {
+                iced::theme::Button::Secondary
+            });
+        mode_list = mode_list.push(btn).push(Space::with_height(Length::Fixed(2.0)));
     }
-    mode_list = mode_list.push(Space::with_height(Length::Fixed(15.0)));
     mode_list = mode_list.push(
-        button(text("+ Add Mode"))
+        button(text("Add Mode"))
             .on_press(Message::AddMode)
             .width(Length::Fill)
-            .padding(12)
-            .style(iced::theme::Button::Secondary)
+            .padding(8)
+            .style(iced::theme::Button::Primary),
     );
     let mode_list = container(
-        scrollable(mode_list)
-            .height(Length::Fill)
-            .width(Length::Fill)
+        column![
+            text("Modes").size(18).style(iced::theme::Text::Color(Color::from_rgb(0.1, 0.3, 0.75))),
+            scrollable(mode_list).height(Length::Fill).width(Length::Fill),
+        ]
     )
-    .padding(20);
+    .padding(12)
+    .width(Length::FillPortion(1))
+    .style(iced::theme::Container::Box);
 
-    let selected_mode = &state.modes[state.selected_mode];
+   let selected_mode = state
+    .modes
+    .get(state.selected_mode)
+    .unwrap_or(&state.modes[0]);
 
     let mode_name_section = container(
-        column![
-            text("Mode Settings").size(20),
-            Space::with_height(Length::Fixed(10.0)),
+        row![
+            text("Mode Name: ").size(16),
             text_input("Mode Name", &selected_mode.name)
                 .on_input(Message::EditModeName)
-                .padding(8)
-                .size(18)
-        ]
-        .spacing(8)
-    )
-    .padding(20)
-    .style(iced::theme::Container::Box);
+                .padding(6)
+                .size(16)
+                .width(Length::Fill)
+        ].spacing(6)
+    ).padding(10).style(iced::theme::Container::Box);
 
     let header_row = container(
         row![
-            text("Key Combination").width(Length::FillPortion(3)),
-            text("Command").width(Length::FillPortion(4)),
-            text("Active").width(Length::FillPortion(1)),
-            text("Delete").width(Length::FillPortion(1)),
+            text("Key Combination").width(Length::FillPortion(3)).size(14),
+            text("Command").width(Length::FillPortion(4)).size(14),
+            text("Save Hotkey").width(Length::FillPortion(1)),
+            text("Delete Hotkey").width(Length::FillPortion(1)),
             text("Record").width(Length::FillPortion(1)),
-        ]
-        .spacing(20)
-        .align_items(Alignment::Center)
+        ].spacing(8).align_items(Alignment::Center),
     )
-    .padding(15)
+    .padding([8, 3, 8, 8])
     .style(iced::theme::Container::Box);
 
     let mut hotkey_rows = column![];
-    for (i, hotkey) in selected_mode.hotkeys.iter().enumerate() {
-        let key_display = if hotkey.modifiers.is_empty() {
-            hotkey.key.clone()
+    for (i, hk) in selected_mode.hotkeys.iter().enumerate() {
+        let recording = state.recording_hotkey == Some(i);
+        let key_display = if hk.key.is_empty() && recording {
+            "Press a key combination...".to_string()
         } else {
-            format!(
-                "{} + {}",
-                hotkey.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
-                hotkey.key
-            )
+            if hk.modifiers.is_empty() {
+                hk.key.clone()
+            } else {
+                format!("{} + {}", hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "), hk.key)
+            }
         };
-        let recording_indicator = if state.recording_hotkey == Some(i) {
-            "🔴"
+        let key_cell = if !hk.key.is_empty() || !recording {
+            container(text(key_display)).padding(7).width(Length::FillPortion(3))
         } else {
-            "⎈"
+            container(text(key_display).style(iced::theme::Text::Color(Color::from_rgb(0.8, 0.2, 0.2))))
+                .padding(7)
+                .width(Length::FillPortion(3))
         };
-        let row_elem = container(
-            row![
-                text_input("Key Combination", &key_display)
-                    .on_input(move |val| Message::EditKey(i, val))
-                    .width(Length::FillPortion(3))
-                    .padding(8),
-                text_input("Command", &hotkey.action.command)
-                    .on_input(move |val| Message::EditCommand(i, val))
-                    .width(Length::FillPortion(4))
-                    .padding(8),
-                container(
-                    checkbox(
-                        "",
-                        hotkey.action.active,
-                        move |is_checked| Message::ToggleActive(i, is_checked),
-                    )
-                )
-                .width(Length::FillPortion(1))
-                .center_x(),
-                container(
-                    button(text("Delete"))
+        let record_btn = container(button("Record")
+            .on_press(Message::StartRecording(i))
+            .padding(4)
+            .style(if recording { iced::theme::Button::Primary } else { iced::theme::Button::Secondary }))
+            .width(Length::FillPortion(1));
+        hotkey_rows = hotkey_rows.push(
+            container(
+                row![
+                    key_cell,
+                    text_input("Command", &hk.action.command)
+                        .on_input(move |val| Message::EditCommand(i, val))
+                        .width(Length::FillPortion(4))
+                        .padding(7),
+                    checkbox("", hk.action.active, move |checked| Message::ToggleActive(i, checked))
+                        .width(Length::FillPortion(1)),
+                    button("Delete")
                         .on_press(Message::DeleteHotkey(i))
                         .style(iced::theme::Button::Destructive)
-                        .padding(8)
-                )
-                .width(Length::FillPortion(1)),
-                container(
-                    button(text(recording_indicator))
-                        .on_press(Message::StartRecording(i))
-                        .padding(8)
-                )
-                .width(Length::FillPortion(1)),
-            ]
-            .spacing(20)
-            .align_items(Alignment::Center)
-        )
-        .padding(12)
-        .style(iced::theme::Container::Box);
-        hotkey_rows = hotkey_rows.push(row_elem);
-        hotkey_rows = hotkey_rows.push(Space::with_height(Length::Fixed(8.0)));
+                        .padding(4)
+                        .width(Length::FillPortion(1)),
+                    record_btn,
+                ]
+                .spacing(8)
+                .align_items(Alignment::Center),
+            ).padding([8, 0])
+             .style(iced::theme::Container::Box),
+        );
+        hotkey_rows = hotkey_rows.push(Space::with_height(Length::Fixed(6.0)));
     }
 
     let controls = container(
         row![
             button(text("Add Hotkey"))
                 .on_press(Message::AddHotkey)
-                .padding(12)
+                .padding(8)
                 .style(iced::theme::Button::Primary),
-            Space::with_width(Length::Fixed(20.0)),
-            button(text("💾 Save & Apply"))
+            Space::with_width(Length::Fixed(16.0)),
+            button(text("Save & Apply"))
                 .on_press(Message::SaveConfig)
-                .padding(12)
+                .padding(8)
                 .style(iced::theme::Button::Primary),
-            button(text("⟳ Load"))
-                .on_press(Message::LoadConfig)
-                .padding(12)
-                .style(iced::theme::Button::Secondary),
-        ]
-        .spacing(15)
-    )
-    .padding(20);
+        ].spacing(12)
+    ).padding(12);
 
     let error_text = if let Some(msg) = error {
-        text(msg).style(iced::theme::Text::Color(iced::Color::from_rgb(1.0, 0.0, 0.0)))
+        text(msg).style(iced::theme::Text::Color(Color::from_rgb(1.0, 0., 0.)))
     } else {
         text("")
     };
 
     let right_panel = column![
         mode_name_section,
-        Space::with_height(Length::Fixed(20.0)),
-        text("Hotkey Configuration").size(20),
-        Space::with_height(Length::Fixed(15.0)),
+        Space::with_height(Length::Fixed(8.0)),
+        text("Hotkey Configuration").size(18).style(iced::theme::Text::Color(Color::from_rgb(0.1, 0.3, 0.75))),
+        Space::with_height(Length::Fixed(4.0)),
         header_row,
-        Space::with_height(Length::Fixed(10.0)),
+        Space::with_height(Length::Fixed(4.0)),
         scrollable(hotkey_rows).height(Length::Fill),
-        Space::with_height(Length::Fixed(20.0)),
+        Space::with_height(Length::Fixed(4.0)),
         controls,
         error_text,
     ]
     .spacing(0)
-    .width(Length::Fill);
+    .width(Length::FillPortion(3))
+    .padding(12);
 
     container(
         row![
-            container(
-                column![
-                    container(text("MODES").size(22))
-                        .padding(20)
-                        .style(iced::theme::Container::Box),
-                    Space::with_height(Length::Fixed(15.0)),
-                    mode_list
-                ]
-            )
-            .width(Length::FillPortion(1)),
-            container(Space::with_width(Length::Fixed(2.0)))
-                .style(iced::theme::Container::Box)
-                .height(Length::Fill),
-            container(right_panel)
-                .width(Length::FillPortion(3))
-                .padding(25),
-        ]
-        .spacing(0)
-        .height(Length::Fill)
+            mode_list,
+            container(Space::with_width(Length::Fixed(2.0))).style(iced::theme::Container::Box).height(Length::Fill),
+            right_panel,
+        ].spacing(0).height(Length::Fill),
     )
-    .padding(25)
+    .padding(0)
     .height(Length::Fill)
     .into()
 }
-

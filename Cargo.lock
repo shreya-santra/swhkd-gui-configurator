@@ -976,6 +976,7 @@ dependencies = [
  "dirs",
  "evdev",
  "iced",
+ "pest",
  "serde",
  "serde_json",
  "sweet",
