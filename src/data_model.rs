@@ -1,4 +1,4 @@
-use sweet::{Binding, Definition, Key, KeyAttribute, Modifier, SwhkdParser, ParserInput};
+use sweet::{Key, Modifier};
 use evdev::Key as EvdevKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
@@ -53,24 +53,45 @@ impl AppState {
         Self::default()
     }
 
-    fn get_swhkd_config_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        Ok(home.join(".config/swhkd/swhkdrc"))
+    /// Returns the path to the user's swhkd config file.
+    pub fn get_swhkd_config_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let home = std::env::var("HOME").map_err(|_| "Could not determine $HOME")?;
+        Ok(PathBuf::from(home).join(".config/swhkd/swhkdrc"))
     }
 
+    /// Load config from the default swhkd config path
     pub fn load_from_swhkd_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.get_swhkd_config_path()?;
         self.modes.clear();
 
         let mut hotkeys = Vec::new();
         if config_path.exists() {
-            if let Ok(parser) = SwhkdParser::from(ParserInput::Path(&config_path)) {
-                for binding in parser.bindings {
+            let contents = fs::read_to_string(&config_path)?;
+            // Simple parsing - you can enhance this based on your config format
+            for line in contents.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                
+                // Very basic parsing - enhance as needed
+                if let Some((combo, command)) = line.split_once('\n') {
+                    let mut modifiers = BTreeSet::new();
+                    let mut key = String::new();
+                    
+                    let mut combo_parts = combo.split('+').map(|s| s.trim().to_lowercase()).collect::<Vec<_>>();
+                    if let Some(last) = combo_parts.pop() {
+                        key = last;
+                        for part in combo_parts {
+                            modifiers.insert(part);
+                        }
+                    }
+                    
                     hotkeys.push(GuiHotkey {
-                        modifiers: binding.definition.modifiers.iter().map(modifier_to_string).collect(),
-                        key: key_to_string(&binding.definition.key),
+                        modifiers,
+                        key,
                         action: GuiAction {
-                            command: binding.command,
+                            command: command.trim().to_string(),
                             active: true,
                             layer_id: 0,
                         },
@@ -78,6 +99,7 @@ impl AppState {
                 }
             }
         }
+        
         self.modes.push(AppMode {
             name: "Default".to_string(),
             hotkeys,
@@ -86,64 +108,160 @@ impl AppState {
         Ok(())
     }
 
-  pub fn save_to_swhkd_config(&mut self) -> Result<(), String> {
-    let mut seen = HashSet::new();
-    for mode in &self.modes {
-        for hk in &mode.hotkeys {
-            if hk.action.active {
-                let sig = (hk.modifiers.clone(), hk.key.clone());
-                if !seen.insert(sig) {
-                    return Err(format!(
-                        "Duplicate binding: {} + {}",
-                        hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
-                        hk.key
-                    ));
+    /// Loads config from any given path (e.g., after picking a config via GUI)
+    pub fn load_from_swhkd_config_at(&mut self, config_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = PathBuf::from(config_path.replace("$HOME", &std::env::var("HOME")?));
+        if !path.exists() {
+            return Err("File not found".into());
+        }
+        
+        self.modes.clear();
+        let mut hotkeys = Vec::new();
+        let contents = fs::read_to_string(&path)?;
+        
+        // Simple parsing - you can enhance this based on your config format
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            
+            // Very basic parsing - enhance as needed
+            if let Some((combo, command)) = line.split_once('\n') {
+                let mut modifiers = BTreeSet::new();
+                let mut key = String::new();
+                
+                let mut combo_parts = combo.split('+').map(|s| s.trim().to_lowercase()).collect::<Vec<_>>();
+                if let Some(last) = combo_parts.pop() {
+                    key = last;
+                    for part in combo_parts {
+                        modifiers.insert(part);
+                    }
+                }
+                
+                hotkeys.push(GuiHotkey {
+                    modifiers,
+                    key,
+                    action: GuiAction {
+                        command: command.trim().to_string(),
+                        active: true,
+                        layer_id: 0,
+                    },
+                });
+            }
+        }
+        
+        self.modes.push(AppMode {
+            name: "Default".to_string(),
+            hotkeys,
+        });
+        self.selected_mode = 0;
+        Ok(())
+    }
+
+    /// Save to a custom path ("Save As..."), for backups/exports
+    pub fn save_to_custom_path(&self, path: &str) -> Result<(), String> {
+        // Clone of your save_to_swhkd_config() logic but writing to `path`
+        let mut seen = HashSet::new();
+        for mode in &self.modes {
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let sig = (hk.modifiers.clone(), hk.key.clone());
+                    if !seen.insert(sig) {
+                        return Err(format!(
+                            "Duplicate binding: {} + {}",
+                            hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
+                            hk.key
+                        ));
+                    }
                 }
             }
         }
-    }
 
-    let config_path = self.get_swhkd_config_path().map_err(|e| e.to_string())?;
-    if let Some(parent) = config_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if config_path.exists() {
-        let backup_path = config_path.with_extension("bak");
-        fs::copy(&config_path, &backup_path).map_err(|e| e.to_string())?;
-        self.last_backup = Some(backup_path);
-    }
+        let config_path = PathBuf::from(path);
 
-    let mut config_text = String::new();
-
-    for mode in &self.modes {
-        
-        if mode.name.to_lowercase() != "default" {
-            config_text.push_str(&format!("@{}\n\n", mode.name));
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
         }
 
-        for hk in &mode.hotkeys {
-            if hk.action.active {
-                
-                let mut mod_vec = hk.modifiers.iter().cloned().collect::<Vec<_>>();
-                mod_vec.sort();
+        let mut config_text = String::new();
+        for mode in &self.modes {
+            if mode.name.to_lowercase() != "default" {
+                config_text.push_str(&format!("@{}\n\n", mode.name));
+            }
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let mut mod_vec = hk.modifiers.iter().cloned().collect::<Vec<_>>();
+                    mod_vec.sort();
+                    let combo = if mod_vec.is_empty() {
+                        hk.key.clone()
+                    } else {
+                        format!("{} + {}", mod_vec.join(" + "), hk.key)
+                    };
+                    config_text.push_str(&format!("{}\n    {}\n\n", combo, hk.action.command));
+                }
+            }
+            config_text.push('\n');
+        }
 
-                let combo = if mod_vec.is_empty() {
-                    hk.key.clone()
-                } else {
-                    format!("{} + {}", mod_vec.join(" + "), hk.key)
-                };
+        fs::write(&config_path, config_text).map_err(|e| e.to_string())?;
+        Ok(())
+    }
 
-                
-                config_text.push_str(&format!("{}\n    {}\n\n", combo, hk.action.command));
+    /// Save to the default swhkd config path and reload swhkd
+    pub fn save_to_swhkd_config(&self) -> Result<(), String> {
+        let config_path = self.get_swhkd_config_path().map_err(|e| e.to_string())?;
+        
+        // Check for duplicate hotkeys
+        let mut seen = HashSet::new();
+        for mode in &self.modes {
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let sig = (hk.modifiers.clone(), hk.key.clone());
+                    if !seen.insert(sig) {
+                        return Err(format!(
+                            "Duplicate binding: {} + {}",
+                            hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
+                            hk.key
+                        ));
+                    }
+                }
             }
         }
-        config_text.push('\n'); 
-    }
 
-    fs::write(&config_path, config_text).map_err(|e| e.to_string())?;
-    let _ = self.reload_swhkd();
-    Ok(())
-}
+        // Create config directory if it doesn't exist
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        // Generate config text
+        let mut config_text = String::new();
+        for mode in &self.modes {
+            if mode.name.to_lowercase() != "default" {
+                config_text.push_str(&format!("@{}\n\n", mode.name));
+            }
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let mut mod_vec = hk.modifiers.iter().cloned().collect::<Vec<_>>();
+                    mod_vec.sort();
+                    let combo = if mod_vec.is_empty() {
+                        hk.key.clone()
+                    } else {
+                        format!("{} + {}", mod_vec.join(" + "), hk.key)
+                    };
+                    config_text.push_str(&format!("{}\n    {}\n\n", combo, hk.action.command));
+                }
+            }
+        }
+
+        // Write config file
+        fs::write(&config_path, config_text).map_err(|e| e.to_string())?;
+        
+        // Reload swhkd
+        let _ = self.reload_swhkd();
+        
+        Ok(())
+    }
 
     fn reload_swhkd(&self) -> Result<(), Box<dyn std::error::Error>> {
         let _ = Command::new("pkill").arg("-USR1").arg("swhkd").output();
