@@ -1,6 +1,10 @@
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Space};
 use iced::{Alignment, Color, Element, Length};
 use crate::data_model::AppState;
+use iced::widget::{image, image::Image};
+
+use iced::widget::Row; 
+
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -9,6 +13,7 @@ pub enum Message {
     EditCommand(usize, String),
     ToggleActive(usize, bool),
     DeleteHotkey(usize),
+    DeleteMode(usize),
     AddHotkey,
     StartRecording(usize),
     KeyRecorded(String),
@@ -17,22 +22,48 @@ pub enum Message {
     SaveConfig,
     ShowError(String),
     ClearError,
+    OpenBinaryPicker(usize),
+    BinaryPicked(usize, Option<String>),
+    LoadConfigFile,
+    ConfigFilePicked(Option<String>),
+    SaveConfigAs,
+    ConfigFileSavePath(Option<String>),
+
 }
 
 pub fn view<'a>(state: &'a AppState, error: &'a Option<String>) -> Element<'a, Message> {
     let mut mode_list = column![];
     for (i, mode) in state.modes.iter().enumerate() {
-        let btn = button(text(&mode.name))
-            .on_press(Message::SelectMode(i))
-            .width(Length::Fill)
-            .padding(8)
-            .style(if i == state.selected_mode {
-                iced::theme::Button::Primary
-            } else {
-                iced::theme::Button::Secondary
-            });
-        mode_list = mode_list.push(btn).push(Space::with_height(Length::Fixed(2.0)));
-    }
+    let delete_icon = Image::new("assets/icons8-delete-30.png")
+        .width(Length::Fixed(16.0))
+        .height(Length::Fixed(16.0));
+
+    let delete_button = button(delete_icon)
+        .on_press(Message::DeleteMode(i))
+        .style(iced::theme::Button::Destructive)
+        .padding(4)
+        .width(Length::Fixed(28.0))
+        .height(Length::Fixed(28.0));
+
+    let mode_button = button(text(&mode.name))
+        .on_press(Message::SelectMode(i))
+        .width(Length::FillPortion(1))
+        .padding(8)
+        .style(if i == state.selected_mode {
+            iced::theme::Button::Primary
+        } else {
+            iced::theme::Button::Secondary
+        });
+
+    let mode_row = row![
+        mode_button,
+        delete_button
+    ].spacing(6).align_items(Alignment::Center);
+
+    mode_list = mode_list.push(mode_row).push(Space::with_height(Length::Fixed(2.0)));
+}
+
+
     mode_list = mode_list.push(
         button(text("Add Mode"))
             .on_press(Message::AddMode)
@@ -102,14 +133,33 @@ pub fn view<'a>(state: &'a AppState, error: &'a Option<String>) -> Element<'a, M
             .padding(4)
             .style(if recording { iced::theme::Button::Primary } else { iced::theme::Button::Secondary }))
             .width(Length::FillPortion(1));
+
+let folder_icon = Image::new("assets/icons8-file-explorer-64.png")
+    .width(Length::Fixed(20.0))
+    .height(Length::Fixed(20.0));
+
+let file_picker_button = button(folder_icon)
+    .on_press(Message::OpenBinaryPicker(i))
+    .padding(7);
+
+let command_cell = container(
+    row![
+        text_input("Command", &hk.action.command)
+            .on_input(move |val| Message::EditCommand(i, val))
+            .width(Length::FillPortion(3))
+            .padding(7),
+        file_picker_button,
+    ]
+    .spacing(8)
+).width(Length::FillPortion(4));
+
+
+
         hotkey_rows = hotkey_rows.push(
             container(
                 row![
                     key_cell,
-                    text_input("Command", &hk.action.command)
-                        .on_input(move |val| Message::EditCommand(i, val))
-                        .width(Length::FillPortion(4))
-                        .padding(7),
+                    command_cell,
                     checkbox("", hk.action.active, move |checked| Message::ToggleActive(i, checked))
                         .width(Length::FillPortion(1)),
                     button("Delete")
@@ -126,20 +176,30 @@ pub fn view<'a>(state: &'a AppState, error: &'a Option<String>) -> Element<'a, M
         );
         hotkey_rows = hotkey_rows.push(Space::with_height(Length::Fixed(6.0)));
     }
+let controls = container(
+    row![
+        button(text("Add Hotkey"))
+            .on_press(Message::AddHotkey)
+            .padding(8)
+            .style(iced::theme::Button::Primary),
+        Space::with_width(Length::Fixed(12.0)),
+        button(text("Load Config"))
+            .on_press(Message::LoadConfigFile)
+            .padding(8)
+            .style(iced::theme::Button::Secondary),
+        Space::with_width(Length::Fixed(12.0)),
+        button(text("Save As..."))
+            .on_press(Message::SaveConfigAs)
+            .padding(8)
+            .style(iced::theme::Button::Secondary),
+        Space::with_width(Length::Fixed(12.0)),
+        button(text("Save & Apply"))
+            .on_press(Message::SaveConfig)
+            .padding(8)
+            .style(iced::theme::Button::Primary),
+    ].spacing(12)
+).padding(12);
 
-    let controls = container(
-        row![
-            button(text("Add Hotkey"))
-                .on_press(Message::AddHotkey)
-                .padding(8)
-                .style(iced::theme::Button::Primary),
-            Space::with_width(Length::Fixed(16.0)),
-            button(text("Save & Apply"))
-                .on_press(Message::SaveConfig)
-                .padding(8)
-                .style(iced::theme::Button::Primary),
-        ].spacing(12)
-    ).padding(12);
 
     let error_text = if let Some(msg) = error {
         text(msg).style(iced::theme::Text::Color(Color::from_rgb(1.0, 0., 0.)))
@@ -174,7 +234,6 @@ pub fn view<'a>(state: &'a AppState, error: &'a Option<String>) -> Element<'a, M
     .height(Length::Fill)
     .into()
 }
-
 
 
 
