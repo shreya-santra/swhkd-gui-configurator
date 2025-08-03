@@ -71,7 +71,3 @@ Dual-licensed under MIT and Apache-2.0
 **All changes you make in this app are instantly and automatically reflected in your live SWHKD config file—no manual file handling needed!**
 
 ---
-
-[1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/50524620/70e07c86-fd28-4caa-a47b-77f5715b0763/Screenshot-From-2025-08-03-12-24-30.jpg
-[2] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/50524620/b7ca71a3-7e33-449b-b951-bacba598682d/Screenshot-From-2025-08-03-12-44-30.jpg
-[3] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/50524620/dc89050b-52de-4fd8-963d-d342823087ea/Screenshot-From-2025-08-03-12-45-28.jpg
