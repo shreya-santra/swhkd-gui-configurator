@@ -1,19 +1,25 @@
 mod data_model;
 mod interface;
 
+
 use iced::{Application, Command, Element, Settings, Theme, Subscription};
 use data_model::{AppState};
 use interface::{view, Message};
-use iced::keyboard::{self, Event, KeyCode};
+use iced::keyboard::{Event, KeyCode};
+use rfd::FileDialog;
+
+
 
 pub fn main() -> iced::Result {
     SwhkdGui::run(Settings::default())
 }
 
+
 struct SwhkdGui {
     state: AppState,
     error: Option<String>,
 }
+
 
 impl Application for SwhkdGui {
     type Executor = iced::executor::Default;
@@ -21,99 +27,208 @@ impl Application for SwhkdGui {
     type Theme = Theme;
     type Flags = ();
 
+
     fn new(_flags: ()) -> (Self, Command<Self::Message>) {
-        let mut state = AppState::new();
-        let _ = state.load_from_swhkd_config();
-        (Self { state, error: None }, Command::none())
-    }
+    // Try load saved GUI state from JSON file
+    let state = AppState::load_from_json_file("swhkd_gui_saved.json");
+    (Self { state, error: None }, Command::none())
+}
+
+
 
     fn title(&self) -> String {
         "SWHKD GUI Configurator".to_string()
     }
 
-    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
-        use Message::*;
-        match message {
-            SelectMode(idx) => {
-                if idx < self.state.modes.len() {
-                    self.state.selected_mode = idx;
-                }
+
+
+
+fn update(&mut self, message: Message) -> Command<Message> {
+    use Message::*;
+    match message {
+        SelectMode(idx) => {
+            if idx < self.state.modes.len() {
+                self.state.selected_mode = idx;
             }
-            EditModeName(new_name) => {
-                if let Some(mode) = self.state.modes.get_mut(self.state.selected_mode) {
-                    mode.name = new_name;
-                }
+        }
+        EditModeName(new_name) => {
+            if let Some(mode) = self.state.modes.get_mut(self.state.selected_mode) {
+                mode.name = new_name;
             }
-            EditCommand(idx, new_command) => {
-                if let Some(hk) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
-                    hk.action.command = new_command;
-                }
+        }
+        EditCommand(idx, new_command) => {
+            if let Some(hk) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
+                hk.action.command = new_command;
             }
-            ToggleActive(idx, active) => {
-                if let Some(hk) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
-                    hk.action.active = active;
-                }
+        }
+        ToggleActive(idx, active) => {
+            if let Some(hk) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
+                hk.action.active = active;
             }
-            DeleteHotkey(idx) => {
-                let app = &mut self.state.modes[self.state.selected_mode];
-                if idx < app.hotkeys.len() {
-                    app.hotkeys.remove(idx);
-                }
-            }
-            AddHotkey => {
-                let app = &mut self.state.modes[self.state.selected_mode];
-                app.hotkeys.push(data_model::GuiHotkey {
-                    modifiers: Default::default(),
-                    key: String::new(),
-                    action: data_model::GuiAction {
-                        command: String::new(),
-                        active: true,
-                        layer_id: 0,
-                    },
-                });
-                self.state.recording_hotkey = Some(app.hotkeys.len() - 1);
-            }
-            AddMode => {
-                self.state.modes.push(data_model::AppMode {
-                    name: "New Mode".to_string(),
-                    hotkeys: vec![],
-                });
-                self.state.selected_mode = self.state.modes.len() - 1;
-            }
-            StartRecording(idx) => {
-                self.state.recording_hotkey = Some(idx);
-            }
-            KeyRecorded(combo) => {
-                if let Some(idx) = self.state.recording_hotkey {
-                    if let Some(hotkey) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
-                        let parts: Vec<_> = combo.split('+').map(|s| s.trim().to_string()).collect();
-                        if !parts.is_empty() {
-                            if parts.len() == 1 {
-                                hotkey.modifiers.clear();
-                                hotkey.key = parts[0].clone();
-                            } else {
-                                hotkey.modifiers = parts[..parts.len()-1].iter().cloned().collect();
-                                hotkey.key = parts[parts.len()-1].clone();
-                            }
+        }
+        DeleteHotkey(idx) => {
+    if let Some(mode) = self.state.modes.get_mut(self.state.selected_mode) {
+        if idx < mode.hotkeys.len() {
+            mode.hotkeys.remove(idx);
+            
+            let _ = self.state.save_to_json_file("swhkd_gui_saved.json");
+        }
+    }
+}
+
+        AddHotkey => {
+            let app = &mut self.state.modes[self.state.selected_mode];
+            app.hotkeys.push(crate::data_model::GuiHotkey {
+                modifiers: Default::default(),
+                key: String::new(),
+                action: crate::data_model::GuiAction {
+                    command: String::new(),
+                    active: true,
+                    layer_id: 0,
+                },
+            });
+            self.state.recording_hotkey = Some(app.hotkeys.len() - 1);
+        }
+        AddMode => {
+            self.state.modes.push(crate::data_model::AppMode {
+                name: "New Mode".to_string(),
+                hotkeys: vec![],
+            });
+            self.state.selected_mode = self.state.modes.len() - 1;
+        }
+        StartRecording(idx) => {
+            self.state.recording_hotkey = Some(idx);
+        }
+        KeyRecorded(combo) => {
+            if let Some(idx) = self.state.recording_hotkey {
+                if let Some(hotkey) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
+                    let parts: Vec<_> = combo.split('+').map(|s| s.trim().to_string()).collect();
+                    if !parts.is_empty() {
+                        if parts.len() == 1 {
+                            hotkey.modifiers.clear();
+                            hotkey.key = parts[0].clone();
+                        } else {
+                            hotkey.modifiers = parts[..parts.len()-1].iter().cloned().collect();
+                            hotkey.key = parts[parts.len()-1].clone();
                         }
                     }
                 }
-                self.state.recording_hotkey = None;
             }
-            StopRecording => {
-                self.state.recording_hotkey = None;
+            self.state.recording_hotkey = None;
+        }
+        StopRecording => {
+            self.state.recording_hotkey = None;
+        }
+        SaveConfig => {
+            match self.state.save_to_swhkd_config() {
+                Ok(_) => self.error = None,
+                Err(e) => self.error = Some(e),
             }
-            SaveConfig => {
-                match self.state.save_to_swhkd_config() {
-                    Ok(_) => self.error = None,
-                    Err(e) => self.error = Some(e),
+        }
+        ShowError(msg) => self.error = Some(msg),
+        ClearError => self.error = None,
+
+
+        
+
+
+        OpenBinaryPicker(idx) => {
+            return Command::perform(
+                async move {
+                    FileDialog::new()
+    .set_title("Select Config")
+    
+    .add_filter("All Files", &["*"])             
+    .set_directory("tests/sweet_samples")
+    .pick_file()
+
+
+                        .map(|p| Message::BinaryPicked(idx, Some(p.display().to_string())))
+                        .unwrap_or(Message::BinaryPicked(idx, None))
+                },
+                |msg| msg,
+            );
+        }
+        BinaryPicked(idx, Some(path)) => {
+            if let Some(hk) = self.state.modes[self.state.selected_mode].hotkeys.get_mut(idx) {
+                hk.action.command = path;
+            }
+        }
+        BinaryPicked(_, None) => {}
+
+
+        LoadConfigFile => {
+    return Command::perform(
+        async {
+            FileDialog::new()
+    .set_title("Select swhkdrc file")
+    .add_filter("SWHKD Config", &["swhkdrc"]) 
+    .add_filter("All Files", &["*"])          
+    .set_directory("tests/sweet_samples")     
+    .pick_file()
+                .map(|f| Message::ConfigFilePicked(Some(f.display().to_string())))
+                .unwrap_or(Message::ConfigFilePicked(None))
+        },
+        |msg| msg,
+    );
+}
+
+
+        ConfigFilePicked(Some(path)) => {
+    let mut temp_state = crate::data_model::AppState::default();
+    if let Err(err) = temp_state.load_from_swhkd_config_at(&path) {
+        self.error = Some(format!("Failed to load: {err:?}"));
+    } else {
+        if let Some(new_hotkeys) = temp_state.modes.first().map(|m| m.hotkeys.clone()) {
+            if let Some(mode) = self.state.modes.get_mut(self.state.selected_mode) {
+                mode.hotkeys = new_hotkeys;
+                let _ = self.state.save_to_json_file("swhkd_gui_saved.json");
+            }
+        }
+        self.state.recording_hotkey = None;
+        self.error = None;
+    }
+}
+
+
+        ConfigFilePicked(None) => {}
+        SaveConfigAs => {
+            return Command::perform(
+                async {
+                    FileDialog::new()
+                        .set_file_name("swhkdrc")
+                        .save_file()
+                        .map(|f| Message::ConfigFileSavePath(Some(f.display().to_string())))
+                        .unwrap_or(Message::ConfigFileSavePath(None))
+                },
+                |msg| msg,
+            );
+        }
+        ConfigFileSavePath(Some(path)) => {
+            match self.state.save_to_custom_path(&path) {
+                Ok(_) => self.error = None,
+                Err(e) => self.error = Some(e),
+            }
+        }
+        ConfigFileSavePath(None) => {}
+
+
+        
+        DeleteMode(idx) => {
+            if idx < self.state.modes.len() {
+                self.state.modes.remove(idx);
+                if self.state.selected_mode >= self.state.modes.len() && !self.state.modes.is_empty() {
+                    self.state.selected_mode = self.state.modes.len() - 1;
+                } else if self.state.modes.is_empty() {
+                    self.state.selected_mode = 0;
                 }
             }
-            ShowError(msg) => self.error = Some(msg),
-            ClearError => self.error = None,
         }
-        Command::none()
     }
+    Command::none()
+}
+
+
 
     fn subscription(&self) -> Subscription<Self::Message> {
         if self.state.recording_hotkey.is_some() {
@@ -125,7 +240,8 @@ impl Application for SwhkdGui {
                     if modifiers.shift() { parts.push("shift".to_string()); }
                     if modifiers.logo() { parts.push("super".to_string()); }
 
-                    // Only accept normal keys, not modifier keys
+
+                    
                     match key_code {
                         KeyCode::A => parts.push("a".to_string()),
                         KeyCode::B => parts.push("b".to_string()),
@@ -177,9 +293,10 @@ impl Application for SwhkdGui {
                         KeyCode::Comma => parts.push("comma".to_string()),
                         KeyCode::Period => parts.push("dot".to_string()),
                         KeyCode::Slash => parts.push("slash".to_string()),
-                        // ...add function keys as desired...
+                        
                         _ => return Some(Message::ClearError),
                     };
+
 
                     if parts.is_empty() {
                         Some(Message::ClearError)
@@ -195,10 +312,9 @@ impl Application for SwhkdGui {
         }
     }
 
+
     fn view(&self) -> Element<Self::Message> {
         view(&self.state, &self.error)
     }
 }
-
-
 

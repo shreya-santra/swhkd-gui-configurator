@@ -1,10 +1,14 @@
-use sweet::{Binding, Definition, Key, KeyAttribute, Modifier, SwhkdParser, ParserInput};
+use sweet::{Key, Modifier};
 use evdev::Key as EvdevKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::fs::File;
+use std::io::Write;
+
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuiAction {
@@ -49,13 +53,122 @@ impl Default for AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        Self::default()
+    
+    pub fn load_swhkd_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    let config_path = self.get_swhkd_config_path()?;
+    self.modes.clear();
+
+    let mut hotkeys = Vec::new();
+
+    if config_path.exists() {
+        let contents = fs::read_to_string(&config_path)?;
+
+        let mut lines = contents.lines().peekable();
+
+        while let Some(line) = lines.next() {
+            let line = line.trim_end();
+
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+
+impl AppState {
+    pub fn save_to_json_file(&self, path: &str) -> Result<(), String> {
+        match serde_json::to_string_pretty(self) {
+            Ok(json) => {
+                File::create(path)
+                    .and_then(|mut file| file.write_all(json.as_bytes()))
+                    .map_err(|e| e.to_string())
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+            
+            if line.starts_with('@') {
+                continue; 
+            }
+
+            
+            if !line.starts_with(' ') && !line.starts_with('\t') {
+                let hotkey_line = line;
+
+               
+                let mut command_line = None;
+                while let Some(next_line) = lines.peek() {
+                    let trimmed = next_line.trim_end();
+
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        lines.next();
+                        continue; 
+                    }
+
+                    if trimmed.starts_with(' ') || trimmed.starts_with('\t') {
+                        command_line = Some(trimmed.trim());
+                        lines.next(); 
+                        break;
+                    }
+
+                    break;
+                }
+
+                if let Some(command) = command_line {
+                    
+                    let mut modifiers = BTreeSet::new();
+                    let mut key = String::new();
+
+                    let parts = hotkey_line.split('+').map(|s| s.trim().to_lowercase()).collect::<Vec<_>>();
+
+                    if let Some(k) = parts.last() {
+                        key = k.clone();
+                        for m in &parts[0..parts.len().saturating_sub(1)] {
+                            if !m.is_empty() {
+                                modifiers.insert(m.clone());
+                            }
+                        }
+                    }
+
+                    hotkeys.push(GuiHotkey {
+                        modifiers,
+                        key,
+                        action: GuiAction {
+                            command: command.to_string(),
+                            active: true,
+                            layer_id: 0,
+                        },
+                    });
+                }
+            }
+        }
     }
 
-    fn get_swhkd_config_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        Ok(home.join(".config/swhkd/swhkdrc"))
+    self.modes.push(AppMode {
+        name: "Default".to_string(),
+        hotkeys,
+    });
+
+    self.selected_mode = 0;
+
+    Ok(())
+}
+
+pub fn load_from_json_file(path: &str) -> Self {
+    use std::fs;
+    if let Ok(json) = fs::read_to_string(path) {
+        serde_json::from_str(&json).unwrap_or_default()
+    } else {
+        Self::default()
+    }
+}
+pub fn new() -> Self {
+    Self::default()
+}
+
+    pub fn get_swhkd_config_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let home = std::env::var("HOME").map_err(|_| "Could not determine $HOME")?;
+        Ok(PathBuf::from(home).join(".config/swhkd/swhkdrc"))
     }
 
     pub fn load_from_swhkd_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -64,13 +177,32 @@ impl AppState {
 
         let mut hotkeys = Vec::new();
         if config_path.exists() {
-            if let Ok(parser) = SwhkdParser::from(ParserInput::Path(&config_path)) {
-                for binding in parser.bindings {
+            let contents = fs::read_to_string(&config_path)?;
+            
+            for line in contents.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                
+                
+                if let Some((combo, command)) = line.split_once('\n') {
+                    let mut modifiers = BTreeSet::new();
+                    let mut key = String::new();
+                    
+                    let mut combo_parts = combo.split('+').map(|s| s.trim().to_lowercase()).collect::<Vec<_>>();
+                    if let Some(last) = combo_parts.pop() {
+                        key = last;
+                        for part in combo_parts {
+                            modifiers.insert(part);
+                        }
+                    }
+                    
                     hotkeys.push(GuiHotkey {
-                        modifiers: binding.definition.modifiers.iter().map(modifier_to_string).collect(),
-                        key: key_to_string(&binding.definition.key),
+                        modifiers,
+                        key,
                         action: GuiAction {
-                            command: binding.command,
+                            command: command.trim().to_string(),
                             active: true,
                             layer_id: 0,
                         },
@@ -78,6 +210,7 @@ impl AppState {
                 }
             }
         }
+        
         self.modes.push(AppMode {
             name: "Default".to_string(),
             hotkeys,
@@ -86,64 +219,192 @@ impl AppState {
         Ok(())
     }
 
-  pub fn save_to_swhkd_config(&mut self) -> Result<(), String> {
-    let mut seen = HashSet::new();
-    for mode in &self.modes {
-        for hk in &mode.hotkeys {
-            if hk.action.active {
-                let sig = (hk.modifiers.clone(), hk.key.clone());
-                if !seen.insert(sig) {
-                    return Err(format!(
-                        "Duplicate binding: {} + {}",
-                        hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
-                        hk.key
-                    ));
+    pub fn load_from_swhkd_config_at(&mut self, config_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = PathBuf::from(config_path.replace("$HOME", &std::env::var("HOME")?));
+    if !path.exists() {
+        return Err("File not found".into());
+    }
+    self.modes.clear();
+
+    let contents = fs::read_to_string(&path)?;
+    let mut lines = contents.lines().map(str::trim_end).peekable();
+
+    let mut modes = Vec::new();
+    let mut current_mode_name = "Default".to_string();
+    let mut hotkeys = Vec::new();
+
+    while let Some(line) = lines.next() {
+        let line = line.trim_end();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('@') {
+            if !hotkeys.is_empty() || !modes.is_empty() {
+                modes.push(AppMode {
+                    name: std::mem::take(&mut current_mode_name),
+                    hotkeys: std::mem::take(&mut hotkeys),
+                });
+            }
+            current_mode_name = rest.trim().to_string();
+            continue;
+        }
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            let combo = line;
+            let mut command_line = None;
+            while let Some(next_line) = lines.peek() {
+                let trimmed = next_line.trim_end();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    lines.next();
+                    continue;
+                }
+                if trimmed.starts_with(' ') || trimmed.starts_with('\t') {
+                    command_line = Some(trimmed.trim());
+                    lines.next();
+                }
+                break;
+            }
+            if let Some(command) = command_line {
+                let mut modifiers = BTreeSet::new();
+                let mut key = String::new();
+                let combo_parts: Vec<_> = combo.split('+').map(|s| s.trim().to_lowercase()).collect();
+                if let Some(last) = combo_parts.last() {
+                    key = last.clone();
+                    for part in &combo_parts[0..combo_parts.len().saturating_sub(1)] {
+                        if !part.is_empty() {
+                            modifiers.insert(part.clone());
+                        }
+                    }
+                }
+                hotkeys.push(GuiHotkey {
+                    modifiers,
+                    key,
+                    action: GuiAction {
+                        command: command.to_string(),
+                        active: true,
+                        layer_id: 0,
+                    },
+                });
+            }
+        }
+    }
+    if !hotkeys.is_empty() || modes.is_empty() {
+        modes.push(AppMode {
+            name: current_mode_name,
+            hotkeys,
+        });
+    }
+
+    self.modes = modes;
+    self.selected_mode = 0;
+    Ok(())
+}
+
+
+
+
+    
+    pub fn save_to_custom_path(&self, path: &str) -> Result<(), String> {
+        
+        let mut seen = HashSet::new();
+        for mode in &self.modes {
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let sig = (hk.modifiers.clone(), hk.key.clone());
+                    if !seen.insert(sig) {
+                        return Err(format!(
+                            "Duplicate binding: {} + {}",
+                            hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
+                            hk.key
+                        ));
+                    }
                 }
             }
         }
-    }
 
-    let config_path = self.get_swhkd_config_path().map_err(|e| e.to_string())?;
-    if let Some(parent) = config_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if config_path.exists() {
-        let backup_path = config_path.with_extension("bak");
-        fs::copy(&config_path, &backup_path).map_err(|e| e.to_string())?;
-        self.last_backup = Some(backup_path);
-    }
+        let config_path = PathBuf::from(path);
 
-    let mut config_text = String::new();
-
-    for mode in &self.modes {
-        // Write mode header only if mode name is not "Default" (case insensitive)
-        if mode.name.to_lowercase() != "default" {
-            config_text.push_str(&format!("@{}\n\n", mode.name));
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
         }
 
-        for hk in &mode.hotkeys {
-            if hk.action.active {
-                // Sort modifiers for consistent output
-                let mut mod_vec = hk.modifiers.iter().cloned().collect::<Vec<_>>();
-                mod_vec.sort();
+        let mut config_text = String::new();
+        for mode in &self.modes {
+            if mode.name.to_lowercase() != "default" {
+                config_text.push_str(&format!("@{}\n\n", mode.name));
+            }
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let mut mod_vec = hk.modifiers.iter().cloned().collect::<Vec<_>>();
+                    mod_vec.sort();
+                    let combo = if mod_vec.is_empty() {
+                        hk.key.clone()
+                    } else {
+                        format!("{} + {}", mod_vec.join(" + "), hk.key)
+                    };
+                    config_text.push_str(&format!("{}\n    {}\n\n", combo, hk.action.command));
+                }
+            }
+            config_text.push('\n');
+        }
 
-                let combo = if mod_vec.is_empty() {
-                    hk.key.clone()
-                } else {
-                    format!("{} + {}", mod_vec.join(" + "), hk.key)
-                };
+        fs::write(&config_path, config_text).map_err(|e| e.to_string())?;
+        Ok(())
+    }
 
-                // Write one hotkey binding: combo line, indented command line and blank line between bindings
-                config_text.push_str(&format!("{}\n    {}\n\n", combo, hk.action.command));
+    
+    pub fn save_to_swhkd_config(&self) -> Result<(), String> {
+        let config_path = self.get_swhkd_config_path().map_err(|e| e.to_string())?;
+        
+        
+        let mut seen = HashSet::new();
+        for mode in &self.modes {
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let sig = (hk.modifiers.clone(), hk.key.clone());
+                    if !seen.insert(sig) {
+                        return Err(format!(
+                            "Duplicate binding: {} + {}",
+                            hk.modifiers.iter().cloned().collect::<Vec<_>>().join(" + "),
+                            hk.key
+                        ));
+                    }
+                }
             }
         }
-        config_text.push('\n'); // Extra blank line between modes for clarity
-    }
 
-    fs::write(&config_path, config_text).map_err(|e| e.to_string())?;
-    let _ = self.reload_swhkd();
-    Ok(())
-}
+        
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        
+        let mut config_text = String::new();
+        for mode in &self.modes {
+            if mode.name.to_lowercase() != "default" {
+                config_text.push_str(&format!("@{}\n\n", mode.name));
+            }
+            for hk in &mode.hotkeys {
+                if hk.action.active {
+                    let mut mod_vec = hk.modifiers.iter().cloned().collect::<Vec<_>>();
+                    mod_vec.sort();
+                    let combo = if mod_vec.is_empty() {
+                        hk.key.clone()
+                    } else {
+                        format!("{} + {}", mod_vec.join(" + "), hk.key)
+                    };
+                    config_text.push_str(&format!("{}\n    {}\n\n", combo, hk.action.command));
+                }
+            }
+        }
+
+        
+        fs::write(&config_path, config_text).map_err(|e| e.to_string())?;
+        
+        
+        let _ = self.reload_swhkd();
+        
+        Ok(())
+    }
 
     fn reload_swhkd(&self) -> Result<(), Box<dyn std::error::Error>> {
         let _ = Command::new("pkill").arg("-USR1").arg("swhkd").output();
@@ -225,7 +486,7 @@ fn key_to_string(key: &Key) -> String {
         EvdevKey::KEY_DOT => "dot",
         EvdevKey::KEY_SLASH => "slash",
         _ => {
-            // fallback: format to string
+            
             return format!("{:?}", key.key);
         }
     }

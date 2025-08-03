@@ -6,23 +6,23 @@ pub fn key_recorder() -> Subscription<Message> {
     iced::subscription::events_with(|event, _status| {
         match event {
             Event::Keyboard(keyboard::Event::KeyPressed { key_code, modifiers, .. }) => {
-                // Ignore modifier-only keys
+                
                 if is_modifier_key(&key_code) {
                     return None;
                 }
 
-                // Build modifiers list in canonical lowercase form
+                
                 let mut combo_parts = Vec::new();
                 if modifiers.control() { combo_parts.push("ctrl"); }
                 if modifiers.alt() { combo_parts.push("alt"); }
                 if modifiers.shift() { combo_parts.push("shift"); }
                 if modifiers.logo() { combo_parts.push("super"); }
 
-                // Map KeyCode to canonical key name
+                
                 if let Some(key_str) = key_code_to_string(&key_code) {
                     combo_parts.push(key_str);
                 } else {
-                    // Unrecognized key, ignore
+                    
                     return None;
                 }
 
@@ -48,8 +48,7 @@ fn is_modifier_key(key: &KeyCode) -> bool {
     )
 }
 
-/// Map iced::keyboard::KeyCode enum to lowercase strings as per SWHKD format.
-/// Returns None for unsupported keys.
+
 fn key_code_to_string(key_code: &KeyCode) -> Option<&'static str> {
     use KeyCode::*;
 
@@ -127,7 +126,7 @@ fn key_code_to_string(key_code: &KeyCode) -> Option<&'static str> {
         Up => "up",
         Down => "down",
         Backspace => "backspace",
-        // Add more keys if you need
+        
         _ => return None,
     })
 }

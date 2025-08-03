@@ -1,0 +1,37 @@
+{
+  "modes": [
+    {
+      "name": "Default",
+      "hotkeys": [
+        {
+          "modifiers": [
+            "ctrl"
+          ],
+          "key": "s",
+          "action": {
+            "command": "/home/shreyasantra/Documents/Publii/config/app-config.json",
+            "active": true,
+            "layer_id": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Game Mode ",
+      "hotkeys": [
+        {
+          "modifiers": [],
+          "key": "r",
+          "action": {
+            "command": "alacritty",
+            "active": true,
+            "layer_id": 0
+          }
+        }
+      ]
+    }
+  ],
+  "selected_mode": 1,
+  "recording_hotkey": 1,
+  "last_backup": null
+}
