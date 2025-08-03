@@ -1,4 +1,4 @@
-# SWHKD GUI – Visual Hotkey Manager for Wayland
+# SWHKD GUI – Visual Hotkey Manager for SWHKD
 
 A modern graphical interface for [SWHKD](https://github.com/waycrate/swhkd), enabling you to visually manage keyboard shortcuts and modes *directly* in your live SWHKD config file—no manual text editing required . 
 
