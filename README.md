@@ -49,7 +49,7 @@ README.md                     # This file
 **To build and run:**
 ```bash
 git clone https://github.com/shreya-santra/swhkd-gui-configurator.git
-cd gui
+cd swhkd-gui-configurator
 cargo build --release
 cargo run --release
 ```
