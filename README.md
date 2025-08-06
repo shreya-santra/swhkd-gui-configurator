@@ -14,7 +14,7 @@ A graphical user interface to configure hotkeys and modes for Simple Wayland Hot
 
 - Conflict Detection: The app automatically detects and warns about duplicate or conflicting hotkey assignments.
 
-## Installation 
+## Installation and Running 
 
 <pre>git clone https://github.com/shreya-santra/swhkd-gui-configurator.git
 cd swhkd-gui-configurator
