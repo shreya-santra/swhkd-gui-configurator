@@ -5,7 +5,6 @@ use iced::{Alignment, Color, Element, Length, BorderRadius, Theme};
 use iced::font::Weight;
 use crate::data_model::AppState;
 
-// Minimalist palette
 const BACKGROUND: Color = Color::WHITE;
 const CARD: Color = Color::from_rgb(0.95, 0.96, 0.97);
 const CARD_BORDER: Color = Color::from_rgb(0.87, 0.89, 0.91);
@@ -216,7 +215,7 @@ pub fn view<'a>(state: &'a AppState, error: &'a Option<String>) -> Element<'a, M
     .padding([8, 3, 8, 8])
     .style(iced::theme::Container::Custom(Box::new(CardContainer)));
 
-    // ---- Hotkey Rows ----
+    //Hotkey Rows 
     let mut hotkey_rows = column![];
     for (i, hk) in selected_mode.hotkeys.iter().enumerate() {
         let recording = state.recording_hotkey == Some(i);
